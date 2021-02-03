@@ -2,7 +2,8 @@ package main
 
 import (
 	"net/http"
-
+	"os"
+	"log"
 	"time"
 	// "encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gomodule/redigo/redis"
 	"gorm.io/driver/mysql"
+	"github.com/kardianos/service"
 
 )
 
@@ -42,8 +44,17 @@ func SetErrCode(c *gin.Context, err error) {
 
 var db *gorm.DB
 var redisConn redis.Conn
+var logger service.Logger
 
-func main() {
+type program struct{}
+
+func (p *program) Start(s service.Service) error {
+	// Start should not block. Do the actual work async.
+	go p.run()
+	return nil
+}
+
+func (p *program) run() {
 
 	db, _ = gorm.Open(mysql.Open(connect), &gorm.Config{})
 	redisConn, _ = redis.Dial("tcp", "127.0.0.1:6379")
@@ -75,3 +86,43 @@ func main() {
 	r.Run(":8002")
 }
 
+func (p *program) Stop(s service.Service) error {
+	// Stop should not block. Return with a few seconds.
+	return nil
+}
+
+func main() {
+	svcConfig := &service.Config{
+		Name:        "GinAPI",
+		DisplayName: "Gin API",
+		Description: "Mltw Gin API",
+	}
+	prg := &program{}
+	s, err := service.New(prg, svcConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// if in windows install and start uself
+	if len(os.Args) > 1 {
+		err = service.Control(s, os.Args[1])
+		if err != nil {
+			log.Fatal(err)
+		}
+		if os.Args[1] != "start" {
+			return
+		}
+	}
+
+	logger, err = s.Logger(nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = s.Run()
+	if err != nil {
+		logger.Error(err)
+	}
+
+
+}
